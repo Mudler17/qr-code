@@ -1,7 +1,7 @@
 # qr-code.py
-# Streamlit-App: QR-Codes als PNG/SVG erzeugen – optional mit Logo (Overlay oder Clear-Zone/Halo)
-# NEU: Rahmen/Badge (Scan mich, Lies mich, eigener Text) mit Farbwahl
-# HINWEIS: Micro-QR entfernt.
+# Streamlit-App: QR-Codes als PNG/SVG erzeugen – Logo (Overlay oder Clear-Zone/Halo),
+# Badge unten mit dickem, verbundenem Außenrahmen und Autoskalierung des Badge-Texts.
+# Micro-QR ist entfernt.
 
 import io
 import zipfile
@@ -18,7 +18,8 @@ except Exception as e:
     SEGNO_ERR = e
 
 st.title("🔳 QR-Code Generator")
-st.write("Erzeuge QR-Codes als **PNG** oder **SVG** – Farbe, Fehlerkorrektur, Rand, Logo (mit Clear-Zone/Halo) und **Rahmen/Badge** (z. B. „Scan mich“).")
+st.write("QR-Codes als **PNG** oder **SVG** – Farbe, Fehlerkorrektur, Rand, Logo (mit Clear-Zone/Halo) "
+         "und **Badge** unten mit dickem, verbundenem Außenrahmen. Text skaliert automatisch ins Feld.")
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
@@ -86,7 +87,7 @@ def embed_logo_with_clear_zone(
     white_rect = Image.new("RGBA", (cz_w, cz_h), (255, 255, 255, 255))
     base.paste(white_rect, (cz_left, cz_top), mask)
 
-    # Halo-Ring
+    # Optionaler Halo-Ring
     if outline_px > 0:
         outer = Image.new("L", (cz_w+2*outline_px, cz_h+2*outline_px), 0)
         inner = Image.new("L", (cz_w+2*outline_px, cz_h+2*outline_px), 0)
@@ -112,113 +113,129 @@ def embed_logo_with_clear_zone(
     return out.getvalue()
 
 # -------------------------------
-# Rahmen/Badge-Funktion
+# Badge unten + dicker, verbundener Außenrahmen
 # -------------------------------
-def add_label_frame(
+def add_label_frame_full_border(
     png_bytes: bytes,
     label_text: str,
-    frame_bg: str = "#000000",
+    frame_bg: str = "#0B5FFF",
     text_color: str = "#FFFFFF",
-    pad_ratio: float = 0.06,       # Außenabstand um den QR (relativ zur QR-Kante)
-    label_height_ratio: float = 0.20,  # Höhe der Label-Fläche unten (relativ zur QR-Kante)
-    corner_radius_ratio: float = 0.10, # Rundung außen (relativ zur kürzeren Kante)
-    outline_px: int = 0,               # optionaler Außenrahmen
-    outline_color: str = None          # Farbe des Außenrahmens
+    outer_border_px: int = 12,          # dicker Rahmen
+    outer_border_color: str = "#0B5FFF",
+    pad_ratio: float = 0.06,            # Abstand QR ↔ Innenkante Rahmen (relativ zur QR-Kante)
+    label_height_ratio: float = 0.20,   # Höhe des Badges (relativ)
+    gap_px: int = 0                     # Spalt QR ↔ Badge
 ) -> bytes:
-    """
-    Erzeugt unterhalb des QR-Codes eine farbige Label-Fläche mit Text.
-    """
     from PIL import Image, ImageDraw, ImageFont
 
-    # Laden
+    # QR laden
     qr_img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
     W, H = qr_img.size
     side = min(W, H)
 
-    # Clamp und Umrechnungen
-    pad_ratio = clamp(pad_ratio, 0.0, 0.25)
-    label_height_ratio = clamp(label_height_ratio, 0.10, 0.35)
-    corner_radius_ratio = clamp(corner_radius_ratio, 0.0, 0.25)
+    # Parameter clampen
+    pad_ratio          = clamp(pad_ratio, 0.0, 0.25)
+    label_height_ratio = clamp(label_height_ratio, 0.10, 0.40)
+    outer_border_px    = max(0, int(outer_border_px))
+    gap_px             = max(0, int(gap_px))
 
-    pad_px = int(side * pad_ratio)
+    pad_px  = int(side * pad_ratio)
     label_h = int(side * label_height_ratio)
-    outer_w = W + 2 * pad_px
-    outer_h = H + 2 * pad_px + label_h
-    r = int(min(outer_w, outer_h) * corner_radius_ratio)
 
-    # Leinwand (weiß, damit QR-Light in Weiß „neutral“ bleibt)
-    canvas = Image.new("RGBA", (outer_w, outer_h), (255, 255, 255, 255))
-    draw = ImageDraw.Draw(canvas)
+    # Außenform: abgerundeter, gefüllter Rahmen + innen ausgeräumt → verbundener, dicker Rahmen
+    outer_r = int(round(0.12 * (W + H) / 2))           # Außenradius (12% des Mittelmaßes)
+    inner_r = max(0, outer_r - outer_border_px)        # Innenradius um Rahmenbreite kleiner
 
-    # Optionaler Außenrahmen (Outline)
-    if outline_px and outline_px > 0:
-        oc = outline_color or frame_bg
-        draw.rounded_rectangle(
-            [0, 0, outer_w-1, outer_h-1],
-            radius=r,
-            outline=oc,
-            width=outline_px,
-            fill=None
-        )
+    total_w = W + 2*pad_px + 2*outer_border_px
+    total_h = H + 2*pad_px + gap_px + label_h + 2*outer_border_px
 
-    # Label-Fläche (unten) – volle Breite, runde Ecken nur unten
-    # Trick: abgerundetes Rechteck über gesamte Fläche + weiße Überdeckung oben
-    label_rect = Image.new("RGBA", (outer_w, label_h + r), (0, 0, 0, 0))
-    ld = ImageDraw.Draw(label_rect)
-    ld.rounded_rectangle([0, 0, outer_w-1, label_h + r - 1], radius=r, fill=frame_bg)
+    canvas = Image.new("RGBA", (total_w, total_h), (0, 0, 0, 0))
+    draw   = ImageDraw.Draw(canvas)
 
-    # Obere Kante der Label-Fläche horizontal abschneiden (damit nur unten rund bleibt)
-    strip = Image.new("RGBA", (outer_w, r), (255, 255, 255, 255))
-    label_rect.paste(strip, (0, 0), strip)
+    # 1) Außenrahmen vollflächig zeichnen
+    draw.rounded_rectangle(
+        [0, 0, total_w-1, total_h-1],
+        radius=outer_r,
+        fill=outer_border_color
+    )
 
-    # Auf Canvas platzieren
-    label_y = outer_h - (label_h + r)
-    canvas.paste(label_rect, (0, label_y), label_rect)
+    # 2) Innenbereich weiß ausräumen
+    inner_box = [
+        outer_border_px, outer_border_px,
+        total_w-1-outer_border_px, total_h-1-outer_border_px
+    ]
+    draw.rounded_rectangle(inner_box, radius=inner_r, fill=(255, 255, 255, 255))
 
-    # QR aufsetzen (oberhalb der Label-Fläche)
-    canvas.paste(qr_img, (pad_px, pad_px), qr_img)
+    # 3) QR in den Innenbereich setzen
+    inner_left, inner_top, inner_right, inner_bottom = inner_box
+    qr_x = inner_left + pad_px
+    qr_y = inner_top  + pad_px
+    canvas.paste(qr_img, (qr_x, qr_y), qr_img)
 
-    # Text auf Label
+    # 4) Badge unten – volle Innenbreite, oben gerade, unten mit Innenradius gerundet
+    label_x0 = inner_left + pad_px
+    label_x1 = inner_right - pad_px
+    label_y0 = qr_y + H + gap_px
+    label_y1 = min(inner_bottom - pad_px, label_y0 + label_h)
+
+    badge_h_rect = (label_y1 - label_y0) + inner_r  # Platz für Rundung unten
+    badge_img = Image.new("RGBA", (label_x1 - label_x0 + 1, badge_h_rect), (0, 0, 0, 0))
+    bd = ImageDraw.Draw(badge_img)
+    bd.rounded_rectangle(
+        [0, 0, badge_img.width - 1, badge_img.height - 1],
+        radius=inner_r,
+        fill=frame_bg
+    )
+    # obere Kante begradigen (damit oben straight ist)
+    cut_h = badge_h_rect - (label_y1 - label_y0)
+    if cut_h > 0:
+        bd.rectangle([0, 0, badge_img.width - 1, cut_h], fill=frame_bg)
+
+    # Badge auf Canvas aufsetzen (so dass die untere Rundung mit der Innenrundung „fluchtet“)
+    canvas.paste(badge_img, (label_x0, label_y0 - cut_h), badge_img)
+
+    # 5) Text im Badge – mit Innen-Padding & Autoskalierung
     text = (label_text or "").strip()
     if text:
-        # Font wählen (Fallback: Default)
         try:
-            # Versuche DejaVu Sans (häufig in vielen Umgebungen vorhanden)
-            font_size = max(12, int(label_h * 0.50))
-            font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+            base_size = max(14, int((label_y1 - label_y0) * 0.56))
+            font = ImageFont.truetype("DejaVuSans-Bold.ttf", base_size)
         except Exception:
             font = ImageFont.load_default()
 
-        # Dynamische Skalierung, damit Text reinpasst
-        max_w = int(outer_w * 0.92)
-        max_h = int(label_h * 0.80)
-        if hasattr(font, "getbbox"):
-            tb = font.getbbox(text)
-            tw, th = tb[2] - tb[0], tb[3] - tb[1]
-        else:
-            tw, th = draw.textlength(text, font=font), font.size
+        draw2 = ImageDraw.Draw(canvas)
 
-        # ggf. Font kleiner machen
+        def measure(tfont):
+            if hasattr(draw2, "textbbox"):
+                l0 = draw2.textbbox((0, 0), text, font=tfont)
+                return (l0[2] - l0[0], l0[3] - l0[1])
+            elif hasattr(tfont, "getbbox"):
+                b = tfont.getbbox(text)
+                return (b[2] - b[0], b[3] - b[1])
+            else:
+                return (draw2.textlength(text, font=tfont), getattr(tfont, "size", 12))
+
+        pad_x = int((label_x1 - label_x0 + 1) * 0.04)
+        pad_y = max(2, int((label_y1 - label_y0) * 0.10))
+        max_w = (label_x1 - label_x0 + 1) - 2 * pad_x
+        max_h = (label_y1 - label_y0) - 2 * pad_y
+
+        tw, th = measure(font)
         attempts = 0
-        while (tw > max_w or th > max_h) and attempts < 10:
+        while (tw > max_w or th > max_h) and attempts < 16:
             size = getattr(font, "size", 16)
             size = max(10, int(size * 0.92))
             try:
                 font = ImageFont.truetype("DejaVuSans-Bold.ttf", size)
             except Exception:
                 font = ImageFont.load_default()
-            if hasattr(font, "getbbox"):
-                tb = font.getbbox(text)
-                tw, th = tb[2] - tb[0], tb[3] - tb[1]
-            else:
-                tw, th = draw.textlength(text, font=font), font.size
+            tw, th = measure(font)
             attempts += 1
 
-        tx = (outer_w - tw) // 2
-        ty = label_y + (label_h - th) // 2 + int(r * 0.15)  # optische Zentrierung
-        draw.text((tx, ty), text, fill=text_color, font=font)
+        tx = label_x0 + (label_x1 - label_x0 + 1 - tw) // 2
+        ty = label_y0 + (label_y1 - label_y0 - th) // 2
+        draw2.text((tx, ty), text, fill=text_color, font=font)
 
-    # Ausgabe
     out = io.BytesIO()
     canvas.save(out, format="PNG")
     return out.getvalue()
@@ -234,20 +251,20 @@ with st.sidebar:
     dark = st.color_picker("Dunkel (Module)", "#000000")
     light = st.color_picker("Hell (Hintergrund)", "#FFFFFF")
     fmt = st.radio("Format", ["PNG","SVG"], horizontal=True)
-    st.caption("💡 Hoher Kontrast & Rand ≥4 verbessern die Scan-Qualität. Für Logos **ECC Q/H**, Light = #FFFFFF.")
+    st.caption("💡 Für zuverlässiges Scannen: ECC Q/H, Rand ≥ 4, Light = #FFFFFF.")
 
 if not SEGNO_OK:
     st.error(f"`segno` fehlt: {SEGNO_ERR}")
     st.stop()
 
 # -------------------------------
-# Tabs
+# UI
 # -------------------------------
 preset_labels = [
-    "Kein Rahmen/Badge",
-    "Label unten: Scan mich",
-    "Label unten: Lies mich",
-    "Label unten: Jetzt öffnen",
+    "Kein Badge",
+    "Scan mich",
+    "Lies mich",
+    "Jetzt öffnen",
     "Eigener Text …",
 ]
 
@@ -269,44 +286,41 @@ with tab_single:
         cz_radius = st.slider("Eckenrundung (%)", 0,50,20) / 100.0
         halo_px = st.slider("Halo (px)", 0,8,0)
 
-    # Rahmen/Badge-Optionen
-    st.markdown("**Rahmen/Badge**")
+    # Badge + Rahmen
+    st.markdown("**Badge & verbundener Außenrahmen**")
     rb1, rb2 = st.columns(2)
     with rb1:
-        frame_choice = st.selectbox("Vorlage", preset_labels, index=0)
+        frame_choice = st.selectbox("Badge-Text", preset_labels, index=0)
         frame_bg = st.color_picker("Badge-Farbe", "#0B5FFF")
+        outer_border_px = st.slider("Außenrahmen (px)", 0, 48, 12)  # bis 48 px
     with rb2:
         text_color = st.color_picker("Text-Farbe", "#FFFFFF")
+        outer_border_color = st.color_picker("Rahmen-Farbe", "#0B5FFF")
         custom_text = ""
         if frame_choice == "Eigener Text …":
-            custom_text = st.text_input("Badge-Text", "Scan mich")
+            custom_text = st.text_input("Badge-Text (eigene Eingabe)", "Scan mich")
 
-    # Feintuning Rahmen
     ft1, ft2, ft3 = st.columns(3)
     with ft1:
-        pad_ratio = st.slider("Außenabstand (%)", 0, 20, 6) / 100.0
+        pad_ratio = st.slider("Abstand QR↔Rahmen innen (%)", 0, 20, 6) / 100.0
     with ft2:
-        label_ratio = st.slider("Label-Höhe (%)", 10, 35, 20) / 100.0
+        label_ratio = st.slider("Badge-Höhe (%)", 10, 40, 20) / 100.0
     with ft3:
-        outer_radius = st.slider("Außen-Ecken (%)", 0, 25, 10) / 100.0
-    outline_px = st.slider("Außenrahmen (px)", 0, 6, 0)
-    outline_color = st.color_picker("Außenrahmen-Farbe", "#0B5FFF")
+        gap_px = st.slider("Abstand QR↔Badge (px)", 0, 20, 0)
 
     if st.button("QR erzeugen", disabled=not data):
-        # 1) QR bauen
-        qr = segno.make(data, error=ecc)  # Micro-QR entfernt
-        if fmt=="SVG":
+        qr = segno.make(data, error=ecc)
+        if fmt == "SVG":
             buf = io.BytesIO()
             qr.save(buf, kind="svg", scale=scale, border=border, dark=dark, light=light)
             st.download_button("⬇️ SVG", buf.getvalue(), "qrcode.svg", "image/svg+xml")
             st.image(qr.to_pil(scale=6), caption="Vorschau")
         else:
             buf = io.BytesIO()
-            # PNG mit Weiß als Light empfohlen (für saubere Badge/Label-Kanten)
             qr.save(buf, kind="png", scale=scale, border=border, dark=dark, light=light)
             png = buf.getvalue()
 
-            # 2) Logo (optional)
+            # Logo
             if logo_file:
                 if use_clear:
                     png = embed_logo_with_clear_zone(
@@ -317,25 +331,24 @@ with tab_single:
                 else:
                     png = embed_logo_overlay(png, logo_file.read(), logo_rel_size=logo_scale)
 
-            # 3) Rahmen/Badge anwenden
-            if frame_choice != "Kein Rahmen/Badge":
-                label_map = {
-                    "Label unten: Scan mich": "Scan mich",
-                    "Label unten: Lies mich": "Lies mich",
-                    "Label unten: Jetzt öffnen": "Jetzt öffnen",
+            # Badge + verbundener Außenrahmen
+            if frame_choice != "Kein Badge":
+                label_text = {
+                    "Scan mich": "Scan mich",
+                    "Lies mich": "Lies mich",
+                    "Jetzt öffnen": "Jetzt öffnen",
                     "Eigener Text …": (custom_text or "Scan mich"),
-                }
-                label_text = label_map.get(frame_choice, "")
-                png = add_label_frame(
+                }.get(frame_choice, "")
+                png = add_label_frame_full_border(
                     png,
                     label_text=label_text,
                     frame_bg=frame_bg,
                     text_color=text_color,
+                    outer_border_px=outer_border_px,
+                    outer_border_color=outer_border_color,
                     pad_ratio=pad_ratio,
                     label_height_ratio=label_ratio,
-                    corner_radius_ratio=outer_radius,
-                    outline_px=outline_px,
-                    outline_color=outline_color
+                    gap_px=gap_px,
                 )
 
             st.image(png, caption="QR-Code")
@@ -345,24 +358,26 @@ with tab_batch:
     st.subheader("Batch aus CSV")
     st.caption("CSV mit Spalte 'data' und optional 'filename'")
     file = st.file_uploader("CSV hochladen", type=["csv"])
-    # Batch-Rahmen/Badge-Optionen (einheitlich für alle)
-    st.markdown("**Rahmen/Badge (Batch, optional)**")
+
+    # Batch-Badge-Optionen (einheitlich)
+    st.markdown("**Badge & Rahmen (Batch, optional)**")
     b1, b2 = st.columns(2)
     with b1:
         batch_use_badge = st.checkbox("Badge im Batch anwenden")
         batch_frame_bg = st.color_picker("Badge-Farbe (Batch)", "#0B5FFF")
+        batch_outer_border_px = st.slider("Außenrahmen (px) (Batch)", 0, 48, 12)
     with b2:
         batch_text_color = st.color_picker("Text-Farbe (Batch)", "#FFFFFF")
+        batch_outer_border_color = st.color_picker("Rahmen-Farbe (Batch)", "#0B5FFF")
         batch_label_text = st.text_input("Badge-Text (Batch)", "Scan mich")
+
     b3, b4, b5 = st.columns(3)
     with b3:
-        batch_pad = st.slider("Außenabstand (%) (Batch)", 0, 20, 6) / 100.0
+        batch_pad = st.slider("Abstand QR↔Rahmen innen (%) (Batch)", 0, 20, 6) / 100.0
     with b4:
-        batch_label_h = st.slider("Label-Höhe (%) (Batch)", 10, 35, 20) / 100.0
+        batch_label_h = st.slider("Badge-Höhe (%) (Batch)", 10, 40, 20) / 100.0
     with b5:
-        batch_outer_r = st.slider("Außen-Ecken (%) (Batch)", 0, 25, 10) / 100.0
-    batch_outline_px = st.slider("Außenrahmen (px) (Batch)", 0, 6, 0)
-    batch_outline_color = st.color_picker("Außenrahmen-Farbe (Batch)", "#0B5FFF")
+        batch_gap = st.slider("Abstand QR↔Badge (px) (Batch)", 0, 20, 0)
 
     if file:
         import pandas as pd
@@ -377,24 +392,22 @@ with tab_batch:
                     val = str(row["data"])
                     name = str(row["filename"]) if "filename" in df and pd.notna(row["filename"]) else f"qr_{i+1}"
 
-                    # QR erzeugen
                     out = io.BytesIO()
                     qr = segno.make(val, error=ecc)
                     qr.save(out, kind="png", scale=scale, border=border, dark=dark, light=light)
                     png = out.getvalue()
 
-                    # Badge (optional, einheitlich)
                     if batch_use_badge:
-                        png = add_label_frame(
+                        png = add_label_frame_full_border(
                             png,
                             label_text=batch_label_text,
                             frame_bg=batch_frame_bg,
                             text_color=batch_text_color,
+                            outer_border_px=batch_outer_border_px,
+                            outer_border_color=batch_outer_border_color,
                             pad_ratio=batch_pad,
                             label_height_ratio=batch_label_h,
-                            corner_radius_ratio=batch_outer_r,
-                            outline_px=batch_outline_px,
-                            outline_color=batch_outline_color
+                            gap_px=batch_gap,
                         )
 
                     z.writestr(f"{name}.png", png)
