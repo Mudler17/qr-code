@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR-Code Generator | ki-kernel.de</title>
+
+<!-- Externe Bibliotheken -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   CSS Custom Properties & Reset
+   ============================================================ */
+:root {
+  --bg-body: #0c0e14;
+  --bg-panel: #14171f;
+  --bg-card: #1a1e2a;
+  --bg-input: #0f1119;
+  --border: #2a2f3e;
+  --border-focus: #3b82f6;
+  --text-primary: #e8eaf0;
+  --text-secondary: #8b90a0;
+  --text-muted: #5a5f72;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-glow: rgba(59, 130, 246, 0.15);
+  --danger: #ef4444;
+  --success: #22c55e;
+  --font-display: 'JetBrains Mono', monospace;
+  --font-body: 'DM Sans', sans-serif;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow-card: 0 2px 12px rgba(0,0,0,0.3);
+  --transition: 180ms ease;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg-body);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   Layout: Sidebar + Main
+   ============================================================ */
+.app-shell {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  min-height: 100vh;
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    border-right: none !important;
+    border-bottom: 1px solid var(--border);
+    max-height: none !important;
+    position: static !important;
+  }
+}
+
+/* Sidebar */
+.sidebar {
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  padding: 28px 22px;
+  overflow-y: auto;
+  max-height: 100vh;
+  position: sticky;
+  top: 0;
+}
+
+.sidebar-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+
+.sidebar-sub {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+  line-height: 1.45;
+}
+
+/* Sections */
+.section { margin-bottom: 22px; }
+
+.section-label {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-label::before {
+  content: '';
+  flex: 0 0 3px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* Collapsed sections */
+.section-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+.section-toggle::after {
+  content: '▾';
+  margin-left: auto;
+  font-size: 0.7rem;
+  transition: transform var(--transition);
+}
+.section-toggle.collapsed::after { transform: rotate(-90deg); }
+
+.section-body { overflow: hidden; transition: max-height 250ms ease; }
+.section-body.hidden { max-height: 0 !important; padding: 0; }
+
+/* Form Controls */
+.control-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.control-row.stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+label.ctrl-label {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  min-width: 90px;
+  flex-shrink: 0;
+}
+
+select, input[type="text"], input[type="number"], textarea {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color var(--transition);
+  width: 100%;
+}
+
+select:focus, input[type="text"]:focus, textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+textarea { resize: vertical; min-height: 64px; }
+
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--bg-panel);
+}
+
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.range-row input[type="range"] { flex: 1; }
+.range-val {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  color: var(--accent);
+  min-width: 32px;
+  text-align: right;
+}
+
+input[type="color"] {
+  -webkit-appearance: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  width: 36px; height: 30px;
+  padding: 2px;
+  background: var(--bg-input);
+  cursor: pointer;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 3px; }
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.color-row label { font-size: 0.8rem; color: var(--text-secondary); flex: 1; }
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px; height: 16px;
+  cursor: pointer;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.check-row label { font-size: 0.82rem; color: var(--text-secondary); cursor: pointer; }
+
+input[type="file"] { font-size: 0.78rem; color: var(--text-secondary); }
+input[type="file"]::file-selector-button {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  cursor: pointer;
+  margin-right: 8px;
+  transition: background var(--transition);
+}
+input[type="file"]::file-selector-button:hover { background: var(--border); }
+
+/* Radio pills */
+.pill-group {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.pill-group label {
+  flex: 1;
+  text-align: center;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+  background: var(--bg-input);
+  border-right: 1px solid var(--border);
+}
+.pill-group label:last-child { border-right: none; }
+.pill-group label.active { background: var(--accent); color: #fff; }
+
+/* Buttons */
+.btn {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  letter-spacing: 0.02em;
+}
+.btn-primary { background: var(--accent); color: #fff; width: 100%; }
+.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.btn-download {
+  background: var(--bg-card);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+.btn-download:hover { background: var(--border); }
+
+/* ============================================================
+   Main Area
+   ============================================================ */
+.main {
+  padding: 36px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+@media (max-width: 960px) { .main { padding: 24px 16px; } }
+
+.main-header { text-align: center; margin-bottom: 32px; }
+.main-header h1 {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 6px;
+}
+.main-header h1 .kern { color: var(--accent); }
+.main-header p {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  width: fit-content;
+}
+.tab-btn {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 10px 28px;
+  border: none;
+  cursor: pointer;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  transition: all var(--transition);
+}
+.tab-btn.active { background: var(--accent); color: #fff; }
+.tab-btn:hover:not(.active) { background: var(--border); color: var(--text-primary); }
+
+/* Tab panes */
+.tab-pane { display: none; width: 100%; max-width: 700px; }
+.tab-pane.active { display: block; }
+
+/* Preview area */
+.preview-area {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  min-height: 280px;
+  box-shadow: var(--shadow-card);
+}
+.preview-area.empty {
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.preview-area img {
+  max-width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.download-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Batch */
+.batch-info {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 16px;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.batch-info code {
+  font-family: var(--font-display);
+  background: var(--bg-input);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+.batch-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.82rem;
+}
+.batch-table th {
+  background: var(--bg-input);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.batch-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 12px 0;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 200ms ease;
+}
+
+/* Hint */
+.hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* Divider */
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 18px 0;
+}
+
+/* Footer */
+.footer {
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 40px;
+  padding: 20px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-display);
+}
+.footer a { color: var(--accent); text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--success);
+  color: var(--text-primary);
+  padding: 12px 20px;
+  border-radius: var(--radius);
+  font-size: 0.84rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  z-index: 999;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: all 300ms ease;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ======================= SIDEBAR ======================= -->
+  <aside class="sidebar">
+    <div class="sidebar-title">⚙ Einstellungen</div>
+    <div class="sidebar-sub">
+      Farbe, Fehlerkorrektur, Rand, Logo und Badge konfigurieren.
+    </div>
+
+    <!-- QR-Grundeinstellungen -->
+    <div class="section">
+      <div class="section-label section-toggle" onclick="toggleSection(this)">QR-Grundlagen</div>
+      <div class="section-body">
+        <div class="control-row">
+          <label class="ctrl-label">Fehlerkorrektur</label>
+          <select id="ecc">
+            <option value="L">L (7 %)</option>
+            <option value="M">M (15 %)</option>
+            <option value="Q">Q (25 %)</option>
+            <option value="H" selected>H (30 %)</option>
+          </select>
+        </div>
+
+        <label class="ctrl-label">Skalierung</label>
+        <div class="range-row">
+          <input type="range" id="scale" min="2" max="20" value="10">
+          <span class="range-val" id="scaleVal">10</span>
+        </div>
+
+        <label class="ctrl-label">Rand (Quiet Zone)</label>
+        <div class="range-row">
+          <input type="range" id="border" min="0" max="12" value="4">
+          <span class="range-val" id="borderVal">4</span>
+        </div>
+
+        <div class="color-row">
+          <label>Dunkel (Module)</label>
+          <input type="color" id="darkColor" value="#000000">
+        </div>
+
+        <div class="color-row">
+          <label>Hell (Hintergrund)</label>
+          <input type="color" id="lightColor" value="#FFFFFF">
+        </div>
+
+        <div class="section-label" style="margin-top:12px">Format</div>
+        <div class="pill-group" id="formatGroup">
+          <label class="active" onclick="setFormat('PNG')">PNG</label>
+          <label onclick="setFormat('SVG')">SVG</label>
+        </div>
+        <p class="hint">SVG: nur reiner QR-Code (ohne Logo/Badge).</p>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Logo -->
+    <div class="section">
+      <div class="section-label section-toggle" onclick="toggleSection(this)">Logo (optional)</div>
+      <div class="section-body">
+        <div style="margin-bottom:8px">
+          <input type="file" id="logoFile" accept=".png,.jpg,.jpeg,.svg,.webp">
+        </div>
+        <button class="btn btn-download" id="logoRemoveBtn" style="display:none;margin-bottom:8px;width:auto;padding:5px 14px;font-size:0.75rem;" onclick="removeLogo()">✕ Logo entfernen</button>
+
+        <label class="ctrl-label">Logo-Größe (%)</label>
+        <div class="range-row">
+          <input type="range" id="logoScale" min="8" max="28" value="20">
+          <span class="range-val" id="logoScaleVal">20</span>
+        </div>
+
+        <div class="check-row">
+          <input type="checkbox" id="useClearZone">
+          <label for="useClearZone">Clear-Zone unter Logo</label>
+        </div>
+
+        <label class="ctrl-label">Clear-Zone-Rand (%)</label>
+        <div class="range-row">
+          <input type="range" id="czMargin" min="4" max="20" value="10">
+          <span class="range-val" id="czMarginVal">10</span>
+        </div>
+
+        <label class="ctrl-label">Eckenrundung (%)</label>
+        <div class="range-row">
+          <input type="range" id="czRadius" min="0" max="50" value="20">
+          <span class="range-val" id="czRadiusVal">20</span>
+        </div>
+
+        <label class="ctrl-label">Halo (px)</label>
+        <div class="range-row">
+          <input type="range" id="haloPx" min="0" max="8" value="0">
+          <span class="range-val" id="haloPxVal">0</span>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Badge & Rahmen -->
+    <div class="section">
+      <div class="section-label section-toggle" onclick="toggleSection(this)">Badge & Außenrahmen</div>
+      <div class="section-body">
+        <div class="control-row">
+          <label class="ctrl-label">Badge-Text</label>
+          <select id="badgeChoice">
+            <option value="">Kein Badge</option>
+            <option value="Scan mich">Scan mich</option>
+            <option value="Lies mich">Lies mich</option>
+            <option value="Jetzt öffnen">Jetzt öffnen</option>
+            <option value="__custom__">Eigener Text …</option>
+          </select>
+        </div>
+
+        <div id="customBadgeRow" class="control-row" style="display:none">
+          <label class="ctrl-label">Eigener Text</label>
+          <input type="text" id="customBadgeText" value="Scan mich">
+        </div>
+
+        <div class="color-row">
+          <label>Badge-Farbe</label>
+          <input type="color" id="badgeBg" value="#0B5FFF">
+        </div>
+        <div class="color-row">
+          <label>Text-Farbe</label>
+          <input type="color" id="badgeTextColor" value="#FFFFFF">
+        </div>
+
+        <label class="ctrl-label">Außenrahmen (px)</label>
+        <div class="range-row">
+          <input type="range" id="outerBorder" min="0" max="48" value="12">
+          <span class="range-val" id="outerBorderVal">12</span>
+        </div>
+
+        <div class="color-row">
+          <label>Rahmen-Farbe</label>
+          <input type="color" id="outerBorderColor" value="#0B5FFF">
+        </div>
+
+        <label class="ctrl-label">Abstand QR↔Rahmen (%)</label>
+        <div class="range-row">
+          <input type="range" id="padRatio" min="0" max="20" value="6">
+          <span class="range-val" id="padRatioVal">6</span>
+        </div>
+
+        <label class="ctrl-label">Badge-Höhe (%)</label>
+        <div class="range-row">
+          <input type="range" id="labelHeight" min="10" max="40" value="20">
+          <span class="range-val" id="labelHeightVal">20</span>
+        </div>
+
+        <label class="ctrl-label">Abstand QR↔Badge (px)</label>
+        <div class="range-row">
+          <input type="range" id="gapPx" min="0" max="20" value="0">
+          <span class="range-val" id="gapPxVal">0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hint" style="margin-top:12px">
+      💡 Für zuverlässiges Scannen: ECC Q oder H, Rand ≥ 4, Hintergrund weiß.
+    </div>
+  </aside>
+
+  <!-- ======================= MAIN ======================= -->
+  <main class="main">
+    <div class="main-header">
+      <h1>🔳 QR-Code <span class="kern">Generator</span></h1>
+      <p>QR-Codes mit Logo, Badge und verbundenem Außenrahmen erzeugen — als PNG oder SVG, einzeln oder im Batch.</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('single')">Einzeln</button>
+      <button class="tab-btn" onclick="switchTab('batch')">Batch (CSV)</button>
+    </div>
+
+    <!-- ===== Tab: Einzeln ===== -->
+    <div class="tab-pane active" id="pane-single">
+      <div class="control-row stack" style="margin-bottom:16px">
+        <label class="ctrl-label">Inhalt</label>
+        <textarea id="qrData" placeholder="https://ki-kernel.de" rows="3"></textarea>
+      </div>
+
+      <button class="btn btn-primary" id="generateBtn" onclick="generateSingle()">
+        QR erzeugen
+      </button>
+
+      <div class="preview-area empty" id="previewArea" style="margin-top:20px">
+        <span>Vorschau erscheint hier nach Klick auf „QR erzeugen".</span>
+      </div>
+
+      <div class="download-row" id="downloadRow" style="display:none">
+        <button class="btn btn-download" id="dlBtn" onclick="downloadResult()">⬇ Herunterladen</button>
+      </div>
+    </div>
+
+    <!-- ===== Tab: Batch ===== -->
+    <div class="tab-pane" id="pane-batch">
+      <div class="batch-info">
+        CSV-Datei mit Spalte <code>data</code> (Pflicht) und optional <code>filename</code>.
+        Die Sidebar-Einstellungen gelten einheitlich für alle QR-Codes.
+        Badge wird angewendet, wenn in der Sidebar ein Badge-Text gewählt ist.
+      </div>
+
+      <div style="margin-bottom:12px">
+        <input type="file" id="csvFile" accept=".csv,.tsv,.txt">
+      </div>
+
+      <div id="csvPreview" style="display:none"></div>
+
+      <button class="btn btn-primary" id="batchBtn" style="display:none" onclick="generateBatch()">
+        Batch generieren (ZIP)
+      </button>
+
+      <div class="progress-bar" id="batchProgress" style="display:none">
+        <div class="progress-bar-fill" id="batchProgressFill" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <a href="https://ki-kernel.de">ki-kernel.de</a> · QR-Code Generator · Fehlerkorrektur nach ISO/IEC 18004
+    </div>
+  </main>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ======================= JAVASCRIPT ======================= -->
+<script>
+// ============================================================
+// Globale Variablen
+// ============================================================
+let currentFormat = 'PNG';
+let logoImageData = null;    // ArrayBuffer des hochgeladenen Logos
+let csvData = null;          // geparste CSV-Zeilen
+let resultBlob = null;       // letzter erzeugter Blob für Download
+let resultFilename = '';
+
+// ============================================================
+// Hilfsfunktionen
+// ============================================================
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+// Collapsible Sidebar-Sektionen
+function toggleSection(el) {
+  el.classList.toggle('collapsed');
+  const body = el.nextElementSibling;
+  if (body) body.classList.toggle('hidden');
+}
+
+// Range-Slider live updaten
+document.querySelectorAll('input[type="range"]').forEach(r => {
+  const valSpan = document.getElementById(r.id + 'Val');
+  if (valSpan) {
+    r.addEventListener('input', () => { valSpan.textContent = r.value; });
+  }
+});
+
+// Badge custom text toggle
+document.getElementById('badgeChoice').addEventListener('change', e => {
+  document.getElementById('customBadgeRow').style.display =
+    e.target.value === '__custom__' ? 'flex' : 'none';
+});
+
+// Format-Auswahl (PNG / SVG)
+function setFormat(fmt) {
+  currentFormat = fmt;
+  const labels = document.querySelectorAll('#formatGroup label');
+  labels.forEach(l => l.classList.remove('active'));
+  labels[fmt === 'PNG' ? 0 : 1].classList.add('active');
+}
+
+// Tab-Wechsel
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  if (tab === 'single') {
+    document.querySelectorAll('.tab-btn')[0].classList.add('active');
+    document.getElementById('pane-single').classList.add('active');
+  } else {
+    document.querySelectorAll('.tab-btn')[1].classList.add('active');
+    document.getElementById('pane-batch').classList.add('active');
+  }
+}
+
+// Logo laden / entfernen
+document.getElementById('logoFile').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) { logoImageData = null; return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    logoImageData = ev.target.result;
+    document.getElementById('logoRemoveBtn').style.display = 'inline-block';
+  };
+  reader.readAsArrayBuffer(f);
+});
+
+function removeLogo() {
+  logoImageData = null;
+  document.getElementById('logoFile').value = '';
+  document.getElementById('logoRemoveBtn').style.display = 'none';
+}
+
+// CSV laden
+document.getElementById('csvFile').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  Papa.parse(f, {
+    header: true,
+    skipEmptyLines: true,
+    complete: res => {
+      csvData = res.data;
+      if (!res.meta.fields.includes('data')) {
+        document.getElementById('csvPreview').innerHTML =
+          '<p style="color:var(--danger)">⚠ CSV muss eine Spalte „data" enthalten.</p>';
+        document.getElementById('csvPreview').style.display = 'block';
+        document.getElementById('batchBtn').style.display = 'none';
+        return;
+      }
+      let html = '<table class="batch-table"><thead><tr>';
+      res.meta.fields.forEach(f => { html += '<th>' + f + '</th>'; });
+      html += '</tr></thead><tbody>';
+      csvData.slice(0, 5).forEach(row => {
+        html += '<tr>';
+        res.meta.fields.forEach(f => { html += '<td>' + (row[f] || '') + '</td>'; });
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      if (csvData.length > 5) html += '<p class="hint">' + csvData.length + ' Zeilen gesamt</p>';
+      document.getElementById('csvPreview').innerHTML = html;
+      document.getElementById('csvPreview').style.display = 'block';
+      document.getElementById('batchBtn').style.display = 'block';
+    }
+  });
+});
+
+// ============================================================
+// QR-Matrix erzeugen (via qrcode-generator)
+// ============================================================
+function createQRMatrix(text, ecc) {
+  // qrcode(typeNumber, errorCorrectionLevel)
+  // typeNumber = 0 → Auto-Detect
+  const qr = qrcode(0, ecc);
+  qr.addData(text);
+  qr.make();
+  const count = qr.getModuleCount();
+  const matrix = [];
+  for (let r = 0; r < count; r++) {
+    const row = [];
+    for (let c = 0; c < count; c++) {
+      row.push(qr.isDark(r, c));
+    }
+    matrix.push(row);
+  }
+  return { matrix, count };
+}
+
+// ============================================================
+// QR auf Canvas rendern → PNG
+// ============================================================
+function renderQRtoCanvas(text, ecc, scale, borderMod, darkCol, lightCol) {
+  const { matrix, count } = createQRMatrix(text, ecc);
+  const totalMod = count + 2 * borderMod;
+  const size = totalMod * scale;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  // Hintergrund
+  ctx.fillStyle = lightCol;
+  ctx.fillRect(0, 0, size, size);
+
+  // Module
+  ctx.fillStyle = darkCol;
+  for (let r = 0; r < count; r++) {
+    for (let c = 0; c < count; c++) {
+      if (matrix[r][c]) {
+        ctx.fillRect((c + borderMod) * scale, (r + borderMod) * scale, scale, scale);
+      }
+    }
+  }
+  return canvas;
+}
+
+// ============================================================
+// QR als SVG-String erzeugen
+// ============================================================
+function renderQRtoSVG(text, ecc, scale, borderMod, darkCol, lightCol) {
+  const { matrix, count } = createQRMatrix(text, ecc);
+  const totalMod = count + 2 * borderMod;
+  const size = totalMod * scale;
+
+  let paths = [];
+  for (let r = 0; r < count; r++) {
+    for (let c = 0; c < count; c++) {
+      if (matrix[r][c]) {
+        const x = (c + borderMod) * scale;
+        const y = (r + borderMod) * scale;
+        paths.push('M' + x + ',' + y + 'h' + scale + 'v' + scale + 'h-' + scale + 'z');
+      }
+    }
+  }
+
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + size + ' ' + size +
+    '" width="' + size + '" height="' + size + '">\n' +
+    '<rect width="' + size + '" height="' + size + '" fill="' + lightCol + '"/>\n' +
+    '<path d="' + paths.join('') + '" fill="' + darkCol + '"/>\n' +
+    '</svg>';
+}
+
+// ============================================================
+// Canvas-Hilfsfunktion: abgerundetes Rechteck
+// ============================================================
+function roundRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ============================================================
+// Bild aus ArrayBuffer laden
+// ============================================================
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Logo konnte nicht geladen werden.'));
+    if (src instanceof ArrayBuffer || src instanceof Uint8Array) {
+      const blob = new Blob([src]);
+      img.src = URL.createObjectURL(blob);
+    } else {
+      img.src = src;
+    }
+  });
+}
+
+// ============================================================
+// Logo einbetten: einfaches Overlay
+// ============================================================
+async function embedLogoOverlay(canvas, logoData, relSize) {
+  const ctx = canvas.getContext('2d');
+  const logo = await loadImage(logoData);
+  const W = canvas.width, H = canvas.height;
+  const short = Math.min(W, H);
+  relSize = clamp(relSize, 0.05, 0.35);
+  const target = Math.round(short * relSize);
+
+  const ratio = Math.min(target / logo.width, target / logo.height);
+  const lw = Math.round(logo.width * ratio);
+  const lh = Math.round(logo.height * ratio);
+  const x = Math.round((W - lw) / 2);
+  const y = Math.round((H - lh) / 2);
+
+  ctx.drawImage(logo, x, y, lw, lh);
+}
+
+// ============================================================
+// Logo einbetten: mit Clear-Zone & Halo
+// ============================================================
+async function embedLogoWithClearZone(canvas, logoData, relSize, margin, cornerRadius, outlinePx) {
+  const ctx = canvas.getContext('2d');
+  const logo = await loadImage(logoData);
+  const W = canvas.width, H = canvas.height;
+  const short = Math.min(W, H);
+
+  relSize = clamp(relSize, 0.08, 0.28);
+  margin = clamp(margin, 0.04, 0.20);
+  cornerRadius = clamp(cornerRadius, 0.0, 0.5);
+  outlinePx = Math.max(0, outlinePx);
+
+  const target = Math.round(short * relSize);
+  const ratio = Math.min(target / logo.width, target / logo.height);
+  const lw = Math.round(logo.width * ratio);
+  const lh = Math.round(logo.height * ratio);
+  const x = Math.round((W - lw) / 2);
+  const y = Math.round((H - lh) / 2);
+
+  // Clear-Zone-Box berechnen
+  const m = Math.round(Math.min(lw, lh) * margin);
+  const czL = clamp(x - m, 0, W);
+  const czT = clamp(y - m, 0, H);
+  const czR = clamp(x + lw + m, 0, W);
+  const czB = clamp(y + lh + m, 0, H);
+  const czW = Math.max(1, czR - czL);
+  const czH = Math.max(1, czB - czT);
+  const r = Math.round(Math.min(czW, czH) * cornerRadius);
+
+  // Halo-Ring (äußerer Rand um die Clear-Zone)
+  if (outlinePx > 0) {
+    ctx.save();
+    roundRect(ctx, czL - outlinePx, czT - outlinePx, czW + 2 * outlinePx, czH + 2 * outlinePx, r + outlinePx);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Clear-Zone weiß füllen
+  ctx.save();
+  roundRect(ctx, czL, czT, czW, czH, r);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.restore();
+
+  // Logo zeichnen
+  ctx.drawImage(logo, x, y, lw, lh);
+}
+
+// ============================================================
+// Badge + verbundener Außenrahmen
+// ============================================================
+function addBadgeFrame(qrCanvas, labelText, frameBg, textColor,
+                       outerBorderPx, outerBorderCol,
+                       padRatio, labelHeightRatio, gapPx) {
+  const W = qrCanvas.width, H = qrCanvas.height;
+  const side = Math.min(W, H);
+
+  padRatio = clamp(padRatio, 0.0, 0.25);
+  labelHeightRatio = clamp(labelHeightRatio, 0.10, 0.40);
+  outerBorderPx = Math.max(0, outerBorderPx);
+  gapPx = Math.max(0, gapPx);
+
+  const padPx = Math.round(side * padRatio);
+  const labelH = Math.round(side * labelHeightRatio);
+
+  // Radien: Außen- und Innenrundung
+  const outerR = Math.round(0.12 * (W + H) / 2);
+  const innerR = Math.max(0, outerR - outerBorderPx);
+
+  const totalW = W + 2 * padPx + 2 * outerBorderPx;
+  const totalH = H + 2 * padPx + gapPx + labelH + 2 * outerBorderPx;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = totalW;
+  canvas.height = totalH;
+  const ctx = canvas.getContext('2d');
+
+  // 1) Außenrahmen (gefülltes, abgerundetes Rechteck)
+  ctx.save();
+  roundRect(ctx, 0, 0, totalW, totalH, outerR);
+  ctx.fillStyle = outerBorderCol;
+  ctx.fill();
+  ctx.restore();
+
+  // 2) Innenbereich weiß ausräumen
+  const iL = outerBorderPx, iT = outerBorderPx;
+  const iW = totalW - 2 * outerBorderPx;
+  const iH = totalH - 2 * outerBorderPx;
+  ctx.save();
+  roundRect(ctx, iL, iT, iW, iH, innerR);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.restore();
+
+  // 3) QR einfügen
+  const qrX = iL + padPx;
+  const qrY = iT + padPx;
+  ctx.drawImage(qrCanvas, qrX, qrY);
+
+  // 4) Badge unten
+  const badgeX0 = iL + padPx;
+  const badgeX1 = iL + iW - padPx;
+  const badgeY0 = qrY + H + gapPx;
+  const badgeY1 = Math.min(iT + iH - padPx, badgeY0 + labelH);
+  const badgeW = badgeX1 - badgeX0;
+  const badgeH = badgeY1 - badgeY0;
+
+  // Badge mit abgerundeten Ecken
+  ctx.save();
+  roundRect(ctx, badgeX0, badgeY0, badgeW, badgeH, Math.min(innerR, badgeH / 2));
+  ctx.fillStyle = frameBg;
+  ctx.fill();
+  ctx.restore();
+
+  // 5) Text im Badge – autoskaliert
+  const text = (labelText || '').trim();
+  if (text) {
+    const padX = Math.round(badgeW * 0.04);
+    const padY = Math.max(2, Math.round(badgeH * 0.10));
+    const maxTW = badgeW - 2 * padX;
+    const maxTH = badgeH - 2 * padY;
+
+    let fontSize = Math.max(14, Math.round(badgeH * 0.56));
+    ctx.font = 'bold ' + fontSize + 'px "DM Sans", "DejaVu Sans", sans-serif';
+
+    let tw = ctx.measureText(text).width;
+    let attempts = 0;
+    while ((tw > maxTW || fontSize > maxTH) && attempts < 16) {
+      fontSize = Math.max(10, Math.round(fontSize * 0.92));
+      ctx.font = 'bold ' + fontSize + 'px "DM Sans", "DejaVu Sans", sans-serif';
+      tw = ctx.measureText(text).width;
+      attempts++;
+    }
+
+    const tx = badgeX0 + Math.round((badgeW - tw) / 2);
+    // vertikale Zentrierung: Baseline ≈ 72 % der Schrifthöhe
+    const ty = badgeY0 + Math.round((badgeH + fontSize * 0.72) / 2);
+    ctx.fillStyle = textColor;
+    ctx.fillText(text, tx, ty);
+  }
+
+  return canvas;
+}
+
+// ============================================================
+// Einstellungen aus Sidebar sammeln
+// ============================================================
+function getSettings() {
+  return {
+    ecc:             document.getElementById('ecc').value,
+    scale:           parseInt(document.getElementById('scale').value),
+    border:          parseInt(document.getElementById('border').value),
+    dark:            document.getElementById('darkColor').value,
+    light:           document.getElementById('lightColor').value,
+    format:          currentFormat,
+    logoScale:       parseInt(document.getElementById('logoScale').value) / 100,
+    useClear:        document.getElementById('useClearZone').checked,
+    czMargin:        parseInt(document.getElementById('czMargin').value) / 100,
+    czRadius:        parseInt(document.getElementById('czRadius').value) / 100,
+    haloPx:          parseInt(document.getElementById('haloPx').value),
+    badgeChoice:     document.getElementById('badgeChoice').value,
+    customBadgeText: document.getElementById('customBadgeText').value,
+    badgeBg:         document.getElementById('badgeBg').value,
+    badgeTextColor:  document.getElementById('badgeTextColor').value,
+    outerBorder:     parseInt(document.getElementById('outerBorder').value),
+    outerBorderColor:document.getElementById('outerBorderColor').value,
+    padRatio:        parseInt(document.getElementById('padRatio').value) / 100,
+    labelHeight:     parseInt(document.getElementById('labelHeight').value) / 100,
+    gapPx:           parseInt(document.getElementById('gapPx').value),
+  };
+}
+
+function getBadgeText(s) {
+  if (!s.badgeChoice) return '';
+  if (s.badgeChoice === '__custom__') return s.customBadgeText || 'Scan mich';
+  return s.badgeChoice;
+}
+
+// ============================================================
+// Einzel-QR erzeugen
+// ============================================================
+async function generateSingle() {
+  const data = document.getElementById('qrData').value.trim();
+  if (!data) { showToast('Bitte Inhalt eingeben.'); return; }
+
+  const s = getSettings();
+  const area = document.getElementById('previewArea');
+  area.innerHTML = '<span style="color:var(--text-muted)">Erzeuge …</span>';
+  area.classList.add('empty');
+
+  try {
+    // --- SVG-Modus ---
+    if (s.format === 'SVG') {
+      const svg = renderQRtoSVG(data, s.ecc, s.scale, s.border, s.dark, s.light);
+      const blob = new Blob([svg], { type: 'image/svg+xml' });
+      resultBlob = blob;
+      resultFilename = 'qrcode.svg';
+
+      // Vorschau als Bild
+      const url = URL.createObjectURL(blob);
+      area.innerHTML = '<img src="' + url + '" style="max-width:360px;background:#fff;border-radius:6px;padding:8px;">';
+      area.classList.remove('empty');
+      document.getElementById('downloadRow').style.display = 'flex';
+      showToast('SVG erzeugt (Logo/Badge nur bei PNG).');
+      return;
+    }
+
+    // --- PNG-Modus ---
+    const canvas = renderQRtoCanvas(data, s.ecc, s.scale, s.border, s.dark, s.light);
+
+    // Logo einbetten
+    if (logoImageData) {
+      if (s.useClear) {
+        await embedLogoWithClearZone(canvas, logoImageData, s.logoScale, s.czMargin, s.czRadius, s.haloPx);
+      } else {
+        await embedLogoOverlay(canvas, logoImageData, s.logoScale);
+      }
+    }
+
+    // Badge + Rahmen
+    let finalCanvas = canvas;
+    const badgeText = getBadgeText(s);
+    if (badgeText) {
+      finalCanvas = addBadgeFrame(canvas, badgeText, s.badgeBg, s.badgeTextColor,
+        s.outerBorder, s.outerBorderColor, s.padRatio, s.labelHeight, s.gapPx);
+    }
+
+    // Vorschau anzeigen
+    area.innerHTML = '';
+    area.classList.remove('empty');
+    const previewImg = document.createElement('img');
+    previewImg.src = finalCanvas.toDataURL('image/png');
+    previewImg.style.maxWidth = '400px';
+    previewImg.style.borderRadius = '6px';
+    area.appendChild(previewImg);
+
+    // Blob für Download erstellen
+    finalCanvas.toBlob(blob => {
+      resultBlob = blob;
+      resultFilename = 'qrcode.png';
+      document.getElementById('downloadRow').style.display = 'flex';
+    }, 'image/png');
+
+    showToast('QR-Code erzeugt!');
+
+  } catch (err) {
+    area.innerHTML = '<span style="color:var(--danger)">Fehler: ' + err.message + '</span>';
+    area.classList.add('empty');
+    console.error(err);
+  }
+}
+
+// ============================================================
+// Download-Funktion
+// ============================================================
+function downloadResult() {
+  if (resultBlob) {
+    saveAs(resultBlob, resultFilename);
+  }
+}
+
+// ============================================================
+// Batch-Generierung → ZIP
+// ============================================================
+async function generateBatch() {
+  if (!csvData || csvData.length === 0) {
+    showToast('Keine CSV-Daten geladen.');
+    return;
+  }
+
+  const s = getSettings();
+  const badgeText = getBadgeText(s);
+  const zip = new JSZip();
+
+  const progBar = document.getElementById('batchProgress');
+  const progFill = document.getElementById('batchProgressFill');
+  progBar.style.display = 'block';
+  progFill.style.width = '0%';
+  document.getElementById('batchBtn').disabled = true;
+
+  let generated = 0;
+
+  for (let i = 0; i < csvData.length; i++) {
+    const row = csvData[i];
+    const val = (row.data || '').toString().trim();
+    if (!val) continue;
+
+    const name = row.filename
+      ? row.filename.toString().trim()
+      : 'qr_' + (i + 1);
+
+    // QR auf Canvas
+    const canvas = renderQRtoCanvas(val, s.ecc, s.scale, s.border, s.dark, s.light);
+
+    // Badge anwenden (Logo wird im Batch nicht unterstützt – bewusste Vereinfachung)
+    let finalCanvas = canvas;
+    if (badgeText) {
+      finalCanvas = addBadgeFrame(canvas, badgeText, s.badgeBg, s.badgeTextColor,
+        s.outerBorder, s.outerBorderColor, s.padRatio, s.labelHeight, s.gapPx);
+    }
+
+    // Canvas → Blob → ArrayBuffer → ZIP
+    const blob = await new Promise(resolve => finalCanvas.toBlob(resolve, 'image/png'));
+    const buf = await blob.arrayBuffer();
+    zip.file(name + '.png', buf);
+
+    generated++;
+    const pct = Math.round((generated / csvData.length) * 100);
+    progFill.style.width = pct + '%';
+  }
+
+  // ZIP herunterladen
+  const content = await zip.generateAsync({ type: 'blob' });
+  saveAs(content, 'qr_batch.zip');
+
+  progBar.style.display = 'none';
+  document.getElementById('batchBtn').disabled = false;
+  showToast(generated + ' QR-Codes als ZIP erstellt!');
+}
+
+// ============================================================
+// Tastaturkürzel: Enter im Textfeld → QR erzeugen
+// ============================================================
+document.getElementById('qrData').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.ctrlKey) {
+    e.preventDefault();
+    generateSingle();
+  }
+});
+</script>
+</body>
+</html>
