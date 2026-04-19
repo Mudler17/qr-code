@@ -298,10 +298,33 @@ input[type="file"]::file-selector-button:hover { background: var(--border); }
   transition: all var(--transition);
   letter-spacing: 0.02em;
 }
-.btn-primary { background: var(--accent); color: #fff; width: 100%; }
-.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
-.btn-primary:active { transform: translateY(0); }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.btn-primary {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+  width: 100%;
+  font-size: 1.05rem;
+  padding: 14px 24px;
+  border-radius: var(--radius);
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.35), 0 4px 12px rgba(0,0,0,0.3);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 60%);
+  pointer-events: none;
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.5), 0 6px 20px rgba(0,0,0,0.4);
+}
+.btn-primary:active { transform: translateY(0); box-shadow: 0 0 12px rgba(59, 130, 246, 0.3); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
 
 .btn-download {
   background: var(--bg-card);
@@ -657,6 +680,13 @@ input[type="file"]::file-selector-button:hover { background: var(--border); }
           <span class="range-val" id="labelHeightVal">20</span>
         </div>
 
+        <label class="ctrl-label">Schriftgröße (px)</label>
+        <div class="range-row">
+          <input type="range" id="badgeFontSize" min="0" max="80" value="0">
+          <span class="range-val" id="badgeFontSizeVal">auto</span>
+        </div>
+        <p class="hint" style="margin-bottom:8px">0 = automatisch an Badge-Höhe angepasst.</p>
+
         <label class="ctrl-label">Abstand QR↔Badge (px)</label>
         <div class="range-row">
           <input type="range" id="gapPx" min="0" max="20" value="0">
@@ -690,8 +720,8 @@ input[type="file"]::file-selector-button:hover { background: var(--border); }
         <textarea id="qrData" placeholder="https://ki-kernel.de" rows="3"></textarea>
       </div>
 
-      <button class="btn btn-primary" id="generateBtn" onclick="generateSingle()">
-        QR erzeugen
+      <button class="btn btn-primary" id="generateBtn" onclick="generateSingle()" style="margin-top:8px">
+        ▶ QR-Code erzeugen
       </button>
 
       <div class="preview-area empty" id="previewArea" style="margin-top:20px">
@@ -769,7 +799,14 @@ function toggleSection(el) {
 document.querySelectorAll('input[type="range"]').forEach(r => {
   const valSpan = document.getElementById(r.id + 'Val');
   if (valSpan) {
-    r.addEventListener('input', () => { valSpan.textContent = r.value; });
+    r.addEventListener('input', () => {
+      // Spezialfall: Schriftgröße 0 → „auto"
+      if (r.id === 'badgeFontSize') {
+        valSpan.textContent = r.value === '0' ? 'auto' : r.value;
+      } else {
+        valSpan.textContent = r.value;
+      }
+    });
   }
 });
 
@@ -1039,7 +1076,7 @@ async function embedLogoWithClearZone(canvas, logoData, relSize, margin, cornerR
 // ============================================================
 function addBadgeFrame(qrCanvas, labelText, frameBg, textColor,
                        outerBorderPx, outerBorderCol,
-                       padRatio, labelHeightRatio, gapPx) {
+                       padRatio, labelHeightRatio, gapPx, fontSizeOverride) {
   const W = qrCanvas.width, H = qrCanvas.height;
   const side = Math.min(W, H);
 
@@ -1108,11 +1145,14 @@ function addBadgeFrame(qrCanvas, labelText, frameBg, textColor,
     const maxTW = badgeW - 2 * padX;
     const maxTH = badgeH - 2 * padY;
 
-    let fontSize = Math.max(14, Math.round(badgeH * 0.56));
+    let fontSize = (fontSizeOverride && fontSizeOverride > 0)
+      ? fontSizeOverride
+      : Math.max(14, Math.round(badgeH * 0.56));
     ctx.font = 'bold ' + fontSize + 'px "DM Sans", "DejaVu Sans", sans-serif';
 
     let tw = ctx.measureText(text).width;
     let attempts = 0;
+    // Nur herunterskalieren wenn Text nicht passt (auch bei manueller Größe)
     while ((tw > maxTW || fontSize > maxTH) && attempts < 16) {
       fontSize = Math.max(10, Math.round(fontSize * 0.92));
       ctx.font = 'bold ' + fontSize + 'px "DM Sans", "DejaVu Sans", sans-serif';
@@ -1154,6 +1194,7 @@ function getSettings() {
     outerBorderColor:document.getElementById('outerBorderColor').value,
     padRatio:        parseInt(document.getElementById('padRatio').value) / 100,
     labelHeight:     parseInt(document.getElementById('labelHeight').value) / 100,
+    badgeFontSize:   parseInt(document.getElementById('badgeFontSize').value),
     gapPx:           parseInt(document.getElementById('gapPx').value),
   };
 }
@@ -1210,7 +1251,7 @@ async function generateSingle() {
     const badgeText = getBadgeText(s);
     if (badgeText) {
       finalCanvas = addBadgeFrame(canvas, badgeText, s.badgeBg, s.badgeTextColor,
-        s.outerBorder, s.outerBorderColor, s.padRatio, s.labelHeight, s.gapPx);
+        s.outerBorder, s.outerBorderColor, s.padRatio, s.labelHeight, s.gapPx, s.badgeFontSize);
     }
 
     // Vorschau anzeigen
@@ -1284,7 +1325,7 @@ async function generateBatch() {
     let finalCanvas = canvas;
     if (badgeText) {
       finalCanvas = addBadgeFrame(canvas, badgeText, s.badgeBg, s.badgeTextColor,
-        s.outerBorder, s.outerBorderColor, s.padRatio, s.labelHeight, s.gapPx);
+        s.outerBorder, s.outerBorderColor, s.padRatio, s.labelHeight, s.gapPx, s.badgeFontSize);
     }
 
     // Canvas → Blob → ArrayBuffer → ZIP
